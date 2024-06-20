@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Last Stand - Zombie game</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f0f0f0;
+        text-align: center;
+      }
+
+      #game-canvas {
+        display: block;
+        margin: 0 auto;
+        border: 1px solid black;
+        background-image: url("gamebg3.jpg");
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: cover;
+      }
+
+      .controls {
+        margin: 10px;
+      }
+
+      .controls button {
+        margin: 5px;
+        padding: 3px;
+        font-family: "Lucida Sans", "Lucida Sans Regular", "Lucida Grande",
+          "Lucida Sans Unicode", Geneva, Verdana, sans-serif;
+        border-radius: 9px;
+        width: 70px;
+        height: 30px;
+      }
+
+      .controls button:hover {
+        background-color: rgb(152, 223, 143);
+      }
+
+      .score {
+        margin-top: 10px;
+        font-size: 20px;
+        font-family: "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <button id="pausebtn" class="btn" onclick="pauseGame()">Pause</button>
+      <button id="resumebtn" class="btn" onclick="resumeGame()">Resume</button>
+      <button id="resetbtn" class="btn" onclick="resetGame()">Reset</button>
+    </div>
+
+    <canvas id="game-canvas" width="1200" height="600"></canvas>
+
+    <div class="score">
+      <span id="score">Score: 0</span>
+    </div>
+
+    <script>
+      document
+        .getElementById("pausebtn")
+        .addEventListener("click", function () {
+          this.style.backgroundColor = "lightblue"; // Change to your desired color
+        });
+
+      document
+        .getElementById("resumebtn")
+        .addEventListener("click", function () {
+          document.getElementById("pausebtn").style.backgroundColor = ""; // Change to your desired color
+        });
+
+      document
+        .getElementById("resetbtn")
+        .addEventListener("click", function () {
+          document.getElementById("pausebtn").style.backgroundColor = ""; // Change to your desired color
+        });
+
+      // Get audio elements
+      const fireSound = new Audio("tapnotify.mp3");
+      const hitSound = new Audio("hitsound.mp3");
+      const gameoverSound = new Audio("fire.mp3");
+
+      const BULLET_GRAVITY = 0.13; // Gravity effect on bullets
+      const canvas = document.getElementById("game-canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Load images
+      const survivorImage = new Image();
+      survivorImage.src = "Solid_green.svg.png"; // Replace with the path to your survivor image
+
+      const zombieImage = new Image();
+      zombieImage.src = "Solid_red.svg.png"; // Replace with the path to your zombie image
+
+      // Set canvas dimensions
+      canvas.width = 1400;
+      canvas.height = 600;
+
+      // Define some constants
+      const SURVIVOR_SIZE = 55;
+      const ZOMBIE_SIZE = 30;
+      const DEFENSE_BLOCK_SIZE = 40; // Defense block size
+      const BULLET_SIZE = 8;
+      const JUMP_HEIGHT = 20; // Reduced jump height
+      const MOVE_SPEED = 4; // Reduced move speed
+      const BULLET_SPEED = 5; // Reduced bullet speed
+      const ZOMBIE_SPAWN_RATE = 1000; // 1 second
+      const ZOMBIE_SPEED = 1.7; // Reduced zombie speed
+      const GRAVITY = 0.8;
+      // const ZOMBIES_TO_DESTROY_BLOCK = 5; // Number of zombies required to destroy a block
+      const ZOMBIE_DAMAGE_PER_SECOND = 0.0002; // Damage done by a zombie per second
+
+      // Initialize survivor, zombies, bullets, and defense blocks
+      let survivor = {
+        x: canvas.width / 2 - SURVIVOR_SIZE / 2,
+        y: canvas.height - SURVIVOR_SIZE,
+        vx: 0,
+        vy: 0,
+        isJumping: false,
+        facingRight: true, // To track the direction the survivor is facing
+        health: 5, // Add health for survivor
+      };
+
+      let zombies = [];
+      let bullets = [];
+      let defenseBlocks = [
+        {
+          x: 500,
+          y: canvas.height - 70,
+          width: 50,
+          height: 70,
+          health: 8,
+          zombiesAttacking: 0,
+        },
+        {
+          x: 820,
+          y: canvas.height - 100,
+          width: 50,
+          height: 100,
+          health: 10,
+          zombiesAttacking: 0,
+        },
+        {
+          x: 880,
+          y: canvas.height - 60,
+          width: 60,
+          height: 82,
+          health: 12,
+          zombiesAttacking: 0,
+        },
+      ];
+      let score = 0;
+      let isPaused = false;
+      let gameInterval;
+
+      // Main game loop
+      function update() {
+        if (isPaused) return;
+
+        // Update survivor position
+        survivor.x += survivor.vx;
+        survivor.y += survivor.vy;
+
+        // Apply gravity
+        if (survivor.y + SURVIVOR_SIZE < canvas.height) {
+          survivor.vy += GRAVITY;
+        } else {
+          survivor.vy = 0;
+          survivor.y = canvas.height - SURVIVOR_SIZE;
+          survivor.isJumping = false;
+        }
+
+        // Update zombies
+        for (let i = 0; i < zombies.length; i++) {
+          let reachedBlock = false;
+          for (let j = 0; j < defenseBlocks.length; j++) {
+            if (checkCollision(zombies[i], defenseBlocks[j])) {
+              defenseBlocks[j].zombiesAttacking++;
+              reachedBlock = true;
+              // Damage the defense block over time
+              defenseBlocks[j].health -= ZOMBIE_DAMAGE_PER_SECOND;
+              if (defenseBlocks[j].health <= 0) {
+                defenseBlocks.splice(j, 1);
+              }
+              break;
+            }
+          }
+          if (!reachedBlock) {
+            zombies[i].x += zombies[i].vx;
+            if (checkCollision(survivor, zombies[i])) {
+              survivor.health--;
+              zombies.splice(i, 1);
+              if (survivor.health <= 0) {
+                gameoverSound.play(); // Play game over sound
+                setTimeout(() => {
+                  resetGame();
+                  alert("Game Over!");
+                }, 1000);
+                return;
+              }
+            }
+          }
+        }
+
+        // Update bullets
+        for (let i = 0; i < bullets.length; i++) {
+          bullets[i].x += bullets[i].vx;
+          bullets[i].vy += BULLET_GRAVITY; // Apply gravity to vertical velocity
+          bullets[i].y += bullets[i].vy; // Update vertical position
+        }
+
+        // Check for bullet-zombie collisions
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          for (let j = zombies.length - 1; j >= 0; j--) {
+            if (checkCollision(bullets[i], zombies[j])) {
+              bullets.splice(i, 1);
+              zombies.splice(j, 1);
+              score += 10;
+              document.getElementById("score").textContent = "Score: " + score;
+              hitSound.play(); // Play hit sound
+              break;
+            }
+          }
+        }
+
+        // Check for zombie-defense block collisions
+        for (let j = 0; j < defenseBlocks.length; j++) {
+          defenseBlocks[j].zombiesAttacking = 0; // Reset the count
+        }
+
+        // Draw everything
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawSurvivor();
+        drawZombies();
+        drawBullets();
+        drawDefenseBlocks();
+        drawHealth();
+
+        // Request next frame
+        requestAnimationFrame(update);
+      }
+
+      // Draw survivor
+      function drawSurvivor() {
+        ctx.drawImage(
+          survivorImage,
+          survivor.x,
+          survivor.y,
+          SURVIVOR_SIZE,
+          SURVIVOR_SIZE
+        );
+      }
+
+      // Draw zombies
+      function drawZombies() {
+        for (let i = 0; i < zombies.length; i++) {
+          ctx.drawImage(
+            zombieImage,
+            zombies[i].x,
+            zombies[i].y,
+            ZOMBIE_SIZE,
+            ZOMBIE_SIZE
+          );
+        }
+      }
+
+      // Draw bullets
+      function drawBullets() {
+        for (let i = 0; i < bullets.length; i++) {
+          ctx.fillStyle = "white";
+          ctx.fillRect(bullets[i].x, bullets[i].y, BULLET_SIZE, BULLET_SIZE);
+        }
+      }
+
+      // Draw defense blocks with health bars
+      function drawDefenseBlocks() {
+        for (let i = 0; i < defenseBlocks.length; i++) {
+          ctx.fillStyle = "blue";
+          ctx.fillRect(
+            defenseBlocks[i].x,
+            defenseBlocks[i].y,
+            defenseBlocks[i].width,
+            defenseBlocks[i].height
+          );
+
+          // Draw health bar above the defense block
+          const healthBarWidth = defenseBlocks[i].width;
+          const healthBarHeight = 5;
+          const healthPercentage = defenseBlocks[i].health / 12; // Assuming max health is 10 for scaling
+
+          ctx.fillStyle = "red";
+          ctx.fillRect(
+            defenseBlocks[i].x,
+            defenseBlocks[i].y - healthBarHeight - 2, // Positioning above the block
+            healthBarWidth * healthPercentage,
+            healthBarHeight
+          );
+
+          ctx.strokeStyle = "white";
+          ctx.strokeRect(
+            defenseBlocks[i].x,
+            defenseBlocks[i].y - healthBarHeight - 2,
+            healthBarWidth,
+            healthBarHeight
+          );
+        }
+      }
+
+      // Draw survivor health
+      function drawHealth() {
+        const heartSymbol = "❤️"; // Heart symbol to represent health
+        let healthBar = "";
+
+        for (let i = 0; i < survivor.health; i++) {
+          healthBar += heartSymbol + " ";
+        }
+
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText("Health: " + healthBar, 10, 20);
+      }
+
+      // Check for collision between two rectangles
+      function checkCollision(rect1, rect2) {
+        return (
+          (rect1.x < rect2.x + DEFENSE_BLOCK_SIZE &&
+            rect1.x + ZOMBIE_SIZE > rect2.x &&
+            rect1.y < rect2.y + DEFENSE_BLOCK_SIZE &&
+            rect1.y + ZOMBIE_SIZE > rect2.y) ||
+          (rect1.x < rect2.x + ZOMBIE_SIZE &&
+            rect1.x + SURVIVOR_SIZE > rect2.x &&
+            rect1.y < rect2.y + ZOMBIE_SIZE &&
+            rect1.y + SURVIVOR_SIZE > rect2.y) ||
+          (rect1.x < rect2.x + rect2.width &&
+            rect1.x + ZOMBIE_SIZE > rect2.x &&
+            rect1.y < rect2.y + rect2.height &&
+            rect1.y + ZOMBIE_SIZE > rect2.y)
+        );
+      }
+
+      // Handle user input
+      document.addEventListener("keydown", (e) => {
+        switch (e.key) {
+          case "ArrowUp":
+            if (!survivor.isJumping) {
+              survivor.vy = -JUMP_HEIGHT;
+              survivor.isJumping = true;
+            }
+            break;
+          case "ArrowLeft":
+            survivor.vx = -MOVE_SPEED;
+            survivor.facingRight = false;
+            break;
+          case "ArrowRight":
+            survivor.vx = MOVE_SPEED;
+            survivor.facingRight = true;
+            break;
+          case " ":
+            bullets.push({
+              x: survivor.x + SURVIVOR_SIZE / 2 - BULLET_SIZE / 2,
+              y: survivor.y + SURVIVOR_SIZE / 2 - BULLET_SIZE / 2,
+              vx: survivor.facingRight ? BULLET_SPEED : -BULLET_SPEED,
+              vy: -5, // Initial upward velocity
+            });
+            fireSound.play(); // Play fire sound
+            break;
+        }
+      });
+
+      document.addEventListener("keyup", (e) => {
+        switch (e.key) {
+          case "ArrowLeft":
+          case "ArrowRight":
+            survivor.vx = 0;
+            break;
+        }
+      });
+
+      // Spawn zombies at regular intervals
+      gameInterval = setInterval(() => {
+        if (!isPaused) {
+          let zombieX = Math.random() < 0.5 ? 0 : canvas.width - ZOMBIE_SIZE;
+          let zombieVx = zombieX === 0 ? ZOMBIE_SPEED : -ZOMBIE_SPEED;
+          zombies.push({
+            x: zombieX,
+            y: canvas.height - ZOMBIE_SIZE,
+            vx: zombieVx,
+            vy: 0,
+          });
+        }
+      }, ZOMBIE_SPAWN_RATE);
+
+      // Start the game loop
+      update();
+
+      // Pause the game
+      function pauseGame() {
+        isPaused = true;
+      }
+
+      // Resume the game
+      function resumeGame() {
+        if (isPaused) {
+          isPaused = false;
+          update();
+        }
+      }
+
+      function resetGame() {
+        if (!isPaused) {
+          return;
+        }
+        survivor = {
+          x: canvas.width / 2 - SURVIVOR_SIZE / 2,
+          y: canvas.height - SURVIVOR_SIZE,
+          vx: 0,
+          vy: 0,
+          isJumping: false,
+          facingRight: true,
+          health: 5,
+        };
+
+        zombies = [];
+        bullets = [];
+        defenseBlocks = [
+          {
+            x: 500,
+            y: canvas.height - 70,
+            width: 50,
+            height: 70,
+            health: 8,
+            zombiesAttacking: 0,
+          },
+          {
+            x: 820,
+            y: canvas.height - 100,
+            width: 50,
+            height: 100,
+            health: 10,
+            zombiesAttacking: 0,
+          },
+          {
+            x: 880,
+            y: canvas.height - 60,
+            width: 60,
+            height: 82,
+            health: 12,
+            zombiesAttacking: 0,
+          },
+        ];
+        score = 0;
+        isPaused = false;
+        document.getElementById("score").textContent = "Score: " + score;
+
+        // Restart the game loop
+        update();
+      }
+    </script>
+  </body>
+</html>
