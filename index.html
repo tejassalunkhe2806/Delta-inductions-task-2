@@ -16,7 +16,7 @@
         display: block;
         margin: 0 auto;
         border: 1px solid black;
-        background-image: url("gamebg3.jpg");
+        background-image: url("gamebg5.jpg");
         background-repeat: no-repeat;
         background-position: center;
         background-size: cover;
@@ -51,16 +51,23 @@
     <div class="controls">
       <button id="pausebtn" class="btn" onclick="pauseGame()">Pause</button>
       <button id="resumebtn" class="btn" onclick="resumeGame()">Resume</button>
-      <button id="resetbtn" class="btn" onclick="resetGame()">Reset</button>
+      <button id="resetbtn" class="btn">Reset</button>
     </div>
 
-    <canvas id="game-canvas" width="1200" height="600"></canvas>
+    <canvas id="game-canvas"></canvas>
 
     <div class="score">
       <span id="score">Score: 0</span>
     </div>
 
     <script>
+      let ZOMBIE_SPAWN_RATE = 1000; // Initial 1 second
+      const MIN_SPAWN_RATE = 100;
+      const REDUCTION_AMOUNT = 100;
+
+      console.log("Hello and welcome");
+      console.log(ZOMBIE_SPAWN_RATE);
+
       document
         .getElementById("pausebtn")
         .addEventListener("click", function () {
@@ -77,6 +84,13 @@
         .getElementById("resetbtn")
         .addEventListener("click", function () {
           document.getElementById("pausebtn").style.backgroundColor = ""; // Change to your desired color
+        });
+
+      document
+        .getElementById("resetbtn")
+        .addEventListener("click", function () {
+          // Reload the current page
+          location.reload();
         });
 
       // Get audio elements
@@ -96,8 +110,8 @@
       zombieImage.src = "Solid_red.svg.png"; // Replace with the path to your zombie image
 
       // Set canvas dimensions
-      canvas.width = 1400;
-      canvas.height = 600;
+      canvas.width = 1520;
+      canvas.height = 635;
 
       // Define some constants
       const SURVIVOR_SIZE = 55;
@@ -107,11 +121,9 @@
       const JUMP_HEIGHT = 20; // Reduced jump height
       const MOVE_SPEED = 4; // Reduced move speed
       const BULLET_SPEED = 5; // Reduced bullet speed
-      const ZOMBIE_SPAWN_RATE = 1000; // 1 second
       const ZOMBIE_SPEED = 1.7; // Reduced zombie speed
       const GRAVITY = 0.8;
-      // const ZOMBIES_TO_DESTROY_BLOCK = 5; // Number of zombies required to destroy a block
-      const ZOMBIE_DAMAGE_PER_SECOND = 0.0002; // Damage done by a zombie per second
+      const ZOMBIE_DAMAGE_PER_SECOND = 0.001; // Damage done by a zombie per second
 
       // Initialize survivor, zombies, bullets, and defense blocks
       let survivor = {
@@ -154,7 +166,8 @@
       ];
       let score = 0;
       let isPaused = false;
-      let gameInterval;
+      let zombieSpawnInterval;
+      let spawnRateReductionInterval; // **************
 
       // Main game loop
       function update() {
@@ -196,8 +209,8 @@
               if (survivor.health <= 0) {
                 gameoverSound.play(); // Play game over sound
                 setTimeout(() => {
-                  resetGame();
                   alert("Game Over!");
+                  location.reload();
                 }, 1000);
                 return;
               }
@@ -358,7 +371,7 @@
             survivor.vx = MOVE_SPEED;
             survivor.facingRight = true;
             break;
-          case " ":
+          case "s":
             bullets.push({
               x: survivor.x + SURVIVOR_SIZE / 2 - BULLET_SIZE / 2,
               y: survivor.y + SURVIVOR_SIZE / 2 - BULLET_SIZE / 2,
@@ -379,19 +392,49 @@
         }
       });
 
-      // Spawn zombies at regular intervals
-      gameInterval = setInterval(() => {
-        if (!isPaused) {
-          let zombieX = Math.random() < 0.5 ? 0 : canvas.width - ZOMBIE_SIZE;
-          let zombieVx = zombieX === 0 ? ZOMBIE_SPEED : -ZOMBIE_SPEED;
-          zombies.push({
-            x: zombieX,
-            y: canvas.height - ZOMBIE_SIZE,
-            vx: zombieVx,
-            vy: 0,
-          });
-        }
-      }, ZOMBIE_SPAWN_RATE);
+      function startZombieSpawn() {
+        zombieSpawnInterval = setInterval(() => {
+          if (!isPaused) {
+            let zombieX = Math.random() < 0.5 ? 0 : canvas.width - ZOMBIE_SIZE;
+            let zombieVx = zombieX === 0 ? ZOMBIE_SPEED : -ZOMBIE_SPEED;
+            zombies.push({
+              x: zombieX,
+              y: canvas.height - ZOMBIE_SIZE,
+              vx: zombieVx,
+              vy: 0,
+            });
+          }
+        }, ZOMBIE_SPAWN_RATE);
+
+        // Decrease the spawn rate gradually over time
+
+        spawnRateReductionInterval = setInterval(() => {
+          if (ZOMBIE_SPAWN_RATE > MIN_SPAWN_RATE) {
+            ZOMBIE_SPAWN_RATE -= REDUCTION_AMOUNT;
+            if (ZOMBIE_SPAWN_RATE < MIN_SPAWN_RATE) {
+              ZOMBIE_SPAWN_RATE = MIN_SPAWN_RATE;
+            }
+
+            // Clear the old interval and start a new one with the updated spawn rate
+            clearInterval(zombieSpawnInterval);
+            zombieSpawnInterval = setInterval(() => {
+              if (!isPaused) {
+                let zombieX =
+                  Math.random() < 0.5 ? 0 : canvas.width - ZOMBIE_SIZE;
+                let zombieVx = zombieX === 0 ? ZOMBIE_SPEED : -ZOMBIE_SPEED;
+                zombies.push({
+                  x: zombieX,
+                  y: canvas.height - ZOMBIE_SIZE,
+                  vx: zombieVx,
+                  vy: 0,
+                });
+              }
+            }, ZOMBIE_SPAWN_RATE);
+          }
+        }, 10000); // 10 seconds
+      }
+
+      startZombieSpawn();
 
       // Start the game loop
       update();
@@ -399,12 +442,15 @@
       // Pause the game
       function pauseGame() {
         isPaused = true;
+        clearInterval(zombieSpawnInterval); // ******************
+        clearInterval(spawnRateReductionInterval); // ******************
       }
 
       // Resume the game
       function resumeGame() {
         if (isPaused) {
           isPaused = false;
+          startZombieSpawn();
           update();
         }
       }
@@ -455,9 +501,19 @@
         isPaused = false;
         document.getElementById("score").textContent = "Score: " + score;
 
+        startZombieSpawn();
+
         // Restart the game loop
         update();
       }
+
+      function printToConsole() {
+        setInterval(() => {
+          console.log(ZOMBIE_SPAWN_RATE);
+        }, 1000);
+      }
+
+      printToConsole();
     </script>
   </body>
 </html>
